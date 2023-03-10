@@ -2,68 +2,46 @@ apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
-  name: mycluster
+  name: myeks
   region: ap-northeast-2
   version: "1.24"
 
-#AZ -> 가용 영역(따로 지정하지 않으면 랜덤하게 3개의 영역으로 시작됩니다) 
-availabilityZones: ["ap-northeast-2a", "ap-northeast-2b",  "ap-northeast-2c", "ap-northeast-2d"]
+# AZ
+availabilityZones: ["ap-northeast-2a", "ap-northeast-2b",  "ap-northeast-2c"]
 
 # IAM OIDC & Service Account
-iam: # AWS IAM 을 의미합니다 
-  withOIDC: true # OIDC - Open ID Connection을 의미합니다 
-# -> 사용자 계정 / Service Account 가 존재한다고 했습니다 
-# 사용자 계정은 쿠버네티스 자체적으로 만드는 방식이 없음. x509 활용하는 방법을 적용했었습니다.
-# 외부의 인증과 연결하는 방식 OIDC 입니다. 안해주면 인증을 따로따로 해야 합니다. 
+iam:
+  withOIDC: true
   serviceAccounts:
-
-# 미리 만들어 달라. . AWS 에서 사용할 애드온들을 따로 설정을 해둬야 합니다. 일일이 설정을 해야합니다. 
-# 연동을 하기 위해선 pod 내, sa 계정이 존재해야 하는데 AWS 서비스 관련 권한을 미리 할당하고 연결해야합니다.
     - metadata:
-        name: aws-load-balancer-controller # 계정 명 (Ingress 용도) 
-        namespace: kube-system # 네임 스페이스 
-      wellKnownPolicies: # AWS의 ROLE 역할입니다. 역할을 위의 계정과 연결하는 것입니다. 
+        name: aws-load-balancer-controller
+        namespace: kube-system
+      wellKnownPolicies:
         awsLoadBalancerController: true
     - metadata:
-        name: ebs-csi-controller-sa # (Volume)
+        name: ebs-csi-controller-sa
         namespace: kube-system
       wellKnownPolicies:
         ebsCSIController: true
     - metadata:
-        name: cluster-autoscaler # (CA)
+        name: cluster-autoscaler
         namespace: kube-system
       wellKnownPolicies:
         autoScaler: true
 
-# Unmanaged Node Groups
-# 관리가 안 된다. EKS는 관리형입니다. OS update, pck update 수동으로 진행 
-nodeGroups:
-  # On-Demand Instance / Public Network / SSH
-  - name: ng-1
-    instanceType: t3.medium # (m5.large가 디폴트)
-    desiredCapacity: 1
-    availabilityZones: ["ap-northeast-2a", "ap-northeast-2b"]
-    ssh: # ssh 키를 등록하는 과정 
-      allow: true
-      publicKeyPath: ./eks-key.pub
-
-  # Spot Instances / Scaling / Private Network
-# instanceDistribution 부분이 존재한다면 spot instances 라고 합니다. Job, Cronjobs 할 때
-# 적용이 가능합니다.
-
-  # IAM Policy: AutoScaler, ALB Ingress, CloudWatch, EBS
-  - name: ng-spot-2
+# Managed Node Groups
+managedNodeGroups:
+  # On-Demand Instance
+  - name: mynodes-t3
+    instanceType: t3.medium
     minSize: 1
     desiredCapacity: 2
     maxSize: 3
-    privateNetworking: true # private 으로 설정이 가능합니다. 
-    instancesDistribution:
-      maxPrice: 0.01
-      instanceTypes: ["t3.small", "t3.medium"]
-      onDemandBaseCapacity: 0
-      onDemandPercentageAboveBaseCapacity: 0
-      spotInstancePools: 2
-    availabilityZones: ["ap-northeast-2c", "ap-northeast-2d"]
+    privateNetworking: true
+    #ssh:
+      #allow: true
+      #publicKeyPath: ./keypair/myeks.pub
+    availabilityZones: ["ap-northeast-2a", "ap-northeast-2b", "ap-northeast-2c"]
     iam:
       withAddonPolicies:
         autoScaler: true
@@ -71,41 +49,15 @@ nodeGroups:
         cloudWatch: true
         ebs: true
 
-  # Mixed(On-Demand/Spot) Instances
-  - name: ng-mixed-3
-    desiredCapacity: 2
-    instancesDistribution:
-      maxPrice: 0.01
-      instanceTypes: ["t3.small", "t3.small"]
-      onDemandBaseCapacity: 1
-      onDemandPercentageAboveBaseCapacity: 50
-
-# Managed Node Groups
-# 관리가 된다. control plane을 AWS에서 관리해줍니다. 그 외의 나머지 애들도 사용하다 보니 비용은 샤르륵. . 
-# free tier도 적용이 불가합니다. 기본적인 버전 관리도 AWS가 진행해줍니다. 
-managedNodeGroups:
-  # On-Demand Instance
-  - name: managed-ng-1
-    instanceType: t3.small
-    desiredCapacity: 2 # minimum, maximum 도 설정이 가능합니다
-
-  # Spot Instance
-  - name: managed-ng-spot-2
-    instanceTypes: ["t3.small", "t3.medium"]
-    desiredCapacity: 1
-    spot: true
-
 # Fargate Profiles
 fargateProfiles:
-  - name: fg-1
+  - name: myfg
     selectors:
     - namespace: dev
       labels:
-        env: fargate
-
+        env: dev
+        
 # CloudWatch Logging
-# API, server, controller, scheduler 등 컨트롤 플레인에 위치한 서비스의 로그를 확인하고 싶을 때..
-# 로그를 반드시 남겨놔야 하는데 클라우드 워치로 남깁니다.
 cloudWatch:
   clusterLogging:
-    enableTypes: ["api", "scheduler"]
+    enableTypes: ["*"]
